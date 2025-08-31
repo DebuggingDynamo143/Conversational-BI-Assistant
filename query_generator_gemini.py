@@ -4,9 +4,24 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+def get_gemini_api_key():
+    """Get Gemini API key from environment variables or Streamlit secrets"""
+    # First try to get from environment variables (for local development)
+    api_key = os.getenv("GEMINI_API_KEY")
+    
+    # If not found, try to get from Streamlit secrets (for deployment)
+    if not api_key or api_key == "your_gemini_api_key_here":
+        try:
+            import streamlit as st
+            api_key = st.secrets.get("GEMINI_API_KEY")
+        except:
+            pass
+    
+    return api_key
+
 def generate_sql_query(natural_language_query):
     # Check if API key is available
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = get_gemini_api_key()
     if not api_key or api_key == "your_gemini_api_key_here":
         return generate_fallback_query(natural_language_query)
     
