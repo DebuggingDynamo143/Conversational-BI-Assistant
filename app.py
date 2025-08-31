@@ -37,11 +37,58 @@ conn = get_connection()
 
 if conn is None:
     st.error("Could not connect to Oracle database. Please check your connection settings.")
+    
+    # Show helpful debugging information
+    with st.expander("Troubleshooting Help"):
+        st.markdown("""
+        ### Common Oracle Connection Issues:
+        1. **Environment Variables**: Make sure ORACLE_USER, ORACLE_PASSWORD, and ORACLE_DSN are set in your Streamlit secrets
+        2. **Database Accessibility**: Your Oracle database must be accessible from the internet
+        3. **Firewall**: Ensure your database allows connections from Streamlit's IP ranges
+        4. **Client Libraries**: Oracle Instant Client might be needed in your deployment environment
+        
+        ### For Streamlit Cloud Deployment:
+        Add your database credentials to Streamlit secrets (in app settings):
+        ```
+        ORACLE_USER = "your_username"
+        ORACLE_PASSWORD = "your_password"
+        ORACLE_DSN = "your_host:port/your_service_name"
+        ```
+        """)
+    
+    # Provide fallback demo mode
+    if st.button("Use Demo Mode (Sample Data)"):
+        st.session_state.demo_mode = True
+        st.rerun()
+    
     st.stop()
 
 # Test the connection and table
 if not test_connection():
     st.error("Sales table not found in the database. Please make sure you've created the table.")
+    
+    # Provide SQL to create the table
+    with st.expander("Create Sales Table SQL"):
+        st.code("""
+        CREATE TABLE sales (
+            id NUMBER PRIMARY KEY,
+            product_name VARCHAR2(100),
+            sale_date DATE,
+            amount NUMBER(10, 2),
+            region VARCHAR2(50)
+        );
+        
+        -- Sample data
+        INSERT INTO sales VALUES (1, 'Product X', DATE '2023-01-15', 1500.00, 'North');
+        INSERT INTO sales VALUES (2, 'Product Y', DATE '2023-01-16', 2000.00, 'South');
+        INSERT INTO sales VALUES (3, 'Product X', DATE '2023-02-10', 1700.00, 'North');
+        INSERT INTO sales VALUES (4, 'Product Y', DATE '2023-02-15', 2200.00, 'South');
+        INSERT INTO sales VALUES (5, 'Product X', DATE '2023-03-05', 1600.00, 'North');
+        INSERT INTO sales VALUES (6, 'Product Y', DATE '2023-03-12', 2100.00, 'South');
+        INSERT INTO sales VALUES (7, 'Product X', DATE '2023-03-20', 1800.00, 'North');
+        INSERT INTO sales VALUES (8, 'Product Y', DATE '2023-03-25', 2300.00, 'South');
+        """)
+    
     st.stop()
 
 # Sample questions to get users started
@@ -68,7 +115,7 @@ else:
 api_key = os.getenv("GEMINI_API_KEY")
 if ai_available and (not api_key or api_key == "your_gemini_api_key_here"):
     st.warning("⚠ Gemini API key not configured. Using fallback query generator.")
-    st.info("Please add your GEMINI_API_KEY to the .env file")
+    st.info("Please add your GEMINI_API_KEY to the .env file or Streamlit secrets")
 
 # User input
 query = st.text_input("Ask your question about the sales data:", placeholder="e.g., Show me sales trends for Product X")
