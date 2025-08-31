@@ -33,6 +33,11 @@ def init_oracle_connection():
             print("Please set ORACLE_USER, ORACLE_PASSWORD, and ORACLE_DSN environment variables")
             return None
         
+        # Check if using localhost (which won't work on Streamlit Cloud)
+        if dsn and ("localhost" in dsn or "127.0.0.1" in dsn):
+            print("Warning: Using localhost database - this will not work on Streamlit Cloud")
+            return None
+        
         # Oracle connection details - use thin mode for compatibility
         connection = oracledb.connect(
             user=user,
