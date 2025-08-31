@@ -2,7 +2,7 @@ import oracledb
 import os
 from dotenv import load_dotenv
 
-# Try to initialize thick mode
+# Try to initialize thick mode (for local development)
 try:
     oracledb.init_oracle_client()
 except Exception as e:
@@ -18,11 +18,22 @@ def init_oracle_connection():
         password = os.getenv("ORACLE_PASSWORD")
         dsn = os.getenv("ORACLE_DSN")
         
+        # For Streamlit Cloud deployment, check secrets
         if not all([user, password, dsn]):
-            print("Missing database connection parameters in .env file")
+            try:
+                import streamlit as st
+                user = st.secrets.get("ORACLE_USER")
+                password = st.secrets.get("ORACLE_PASSWORD")
+                dsn = st.secrets.get("ORACLE_DSN")
+            except:
+                pass
+        
+        if not all([user, password, dsn]):
+            print("Missing database connection parameters")
+            print("Please set ORACLE_USER, ORACLE_PASSWORD, and ORACLE_DSN environment variables")
             return None
         
-        # Oracle connection details
+        # Oracle connection details - use thin mode for compatibility
         connection = oracledb.connect(
             user=user,
             password=password,
