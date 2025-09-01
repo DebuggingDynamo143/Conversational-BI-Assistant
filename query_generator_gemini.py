@@ -1,132 +1,98 @@
 import google.generativeai as genai
 import os
 from dotenv import load_dotenv
+from postgresql_database import get_db_schema
 
 load_dotenv()
 
 def get_gemini_api_key():
-    """Get Gemini API key from environment variables or Streamlit secrets"""
-    # First try to get from environment variables (for local development)
+    """Get Gemini API key from env or Streamlit secrets."""
     api_key = os.getenv("GEMINI_API_KEY")
-    
-    # If not found, try to get from Streamlit secrets (for deployment)
     if not api_key or api_key == "your_gemini_api_key_here":
         try:
             import streamlit as st
             api_key = st.secrets.get("GEMINI_API_KEY")
         except:
             pass
-    
     return api_key
 
 def generate_sql_query(natural_language_query):
-    # Check if API key is available
     api_key = get_gemini_api_key()
-    if not api_key or api_key == "your_gemini_api_key_here":
+    if not api_key:
         return generate_fallback_query(natural_language_query)
-    
+
     try:
-        # Configure Gemini API
         genai.configure(api_key=api_key)
-        
+
+        schema_text = get_db_schema()
+        print("🔎 Injected DB Schema:")
+        print(schema_text)
+
         prompt = f"""
-        You are an expert data analyst. Convert the following natural language query into Oracle SQL.
-        The database has a table named 'sales' with columns: id, product_name, sale_date, amount, region.
-        
-        Important: 
-        - Use Oracle SQL syntax compatible with older versions (avoid FETCH FIRST, use ROWNUM instead)
-        - Return only the SQL query without any explanation
-        - Do not include markdown formatting or backticks
-        - Make sure the query is specific to the question asked
-        - For limiting results, use: SELECT * FROM (SELECT ... ORDER BY ...) WHERE ROWNUM <= N
-        - Use SUM() instead of SDN() for summation
-        
+        You are an expert SQL generator.
+        Convert the following natural language request into a valid PostgreSQL SQL query.
+
+        Database schema:
+        {schema_text}
+
+        Rules:
+        - Use PostgreSQL syntax.
+        - For limiting results, use: LIMIT N
+        - Use EXTRACT(MONTH FROM sale_date) for month filters
+        - Always JOIN products and customers when referencing product_name or customer_name.
+        - Only return the SQL query (no explanation, no markdown).
+
         Natural language query: {natural_language_query}
         """
-        
-        # Try different model names
-        model_names = ['gemini-pro', 'models/gemini-pro']
-        
-        for model_name in model_names:
-            try:
-                model = genai.GenerativeModel(model_name)
-                response = model.generate_content(prompt)
-                
-                sql_query = response.text.strip()
-                
-                # Clean up the response
-                if sql_query.startswith("```sql"):
-                    sql_query = sql_query[6:]
-                if sql_query.startswith("```"):
-                    sql_query = sql_query[3:]
-                if sql_query.endswith("```"):
-                    sql_query = sql_query[:-3]
-                
-                # Fix common SQL errors
-                sql_query = sql_query.replace("SDN(", "SUM(")
-                
-                # Validate that it looks like a SQL query
-                if "select" in sql_query.lower() and "from" in sql_query.lower():
-                    return sql_query.strip()
-                
-            except Exception as e:
-                print(f"Model {model_name} failed: {e}")
-                continue
-        
-        # If all models fail, use fallback
-        return generate_fallback_query(natural_language_query)
-    
+
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(prompt)
+
+        print("🔎 Gemini Raw Response:")
+        print(response.text)
+
+        sql_query = response.text.strip()
+
+        # Cleanup if wrapped in markdown fences
+        if sql_query.startswith("```sql"):
+            sql_query = sql_query[6:]
+        if sql_query.endswith("```"):
+            sql_query = sql_query[:-3]
+
+        return sql_query.strip()
     except Exception as e:
-        print(f"Error with Gemini API: {e}")
+        print(f"❌ Error with Gemini API: {e}")
         return generate_fallback_query(natural_language_query)
 
 def generate_fallback_query(natural_language_query):
-    """
-    Improved fallback query generator with Oracle-compatible syntax
-    """
     query = natural_language_query.lower()
-    
-    # Pattern matching for different types of queries
-    if any(word in query for word in ["last 5", "recent", "show me", "display"]):
-        return "SELECT * FROM (SELECT * FROM sales ORDER BY sale_date DESC) WHERE ROWNUM <= 5"
-    
+
+    if "last 5" in query:
+        return """SELECT s.sale_id, p.product_name, c.customer_name, s.amount, s.sale_date
+                  FROM sales s
+                  JOIN products p ON s.product_id = p.product_id
+                  JOIN customers c ON s.customer_id = c.customer_id
+                  ORDER BY s.sale_date DESC LIMIT 5"""
     elif "total sales" in query and "product" in query:
-        return "SELECT product_name, SUM(amount) as total_sales FROM sales GROUP BY product_name ORDER BY total_sales DESC"
-    
+        return """SELECT p.product_name, SUM(s.amount) AS total_sales
+                  FROM sales s
+                  JOIN products p ON s.product_id = p.product_id
+                  GROUP BY p.product_name ORDER BY total_sales DESC"""
     elif "average" in query and "product" in query:
-        return "SELECT product_name, AVG(amount) as average_sale FROM sales GROUP BY product_name ORDER BY average_sale DESC"
-    
-    elif "region" in query and ("compare" in query or "by region" in query):
-        return "SELECT region, SUM(amount) as total_sales FROM sales GROUP BY region ORDER BY total_sales DESC"
-    
-    elif "product" in query and "region" in query:
-        return "SELECT product_name, region, SUM(amount) as total_sales FROM sales GROUP BY product_name, region ORDER BY product_name, region"
-    
-    elif "february" in query or "2" in query or "second month" in query:
-        return "SELECT product_name, SUM(amount) as total_sales FROM sales WHERE EXTRACT(MONTH FROM sale_date) = 2 AND EXTRACT(YEAR FROM sale_date) = 2023 GROUP BY product_name"
-    
-    elif "trend" in query or "over time" in query or "by date" in query:
-        return "SELECT sale_date, SUM(amount) as daily_sales FROM sales GROUP BY sale_date ORDER BY sale_date"
-    
-    elif "product x" in query:
-        return "SELECT * FROM sales WHERE product_name = 'Product X' ORDER BY sale_date"
-    
-    elif "product y" in query:
-        return "SELECT * FROM sales WHERE product_name = 'Product Y' ORDER BY sale_date"
-    
+        return """SELECT p.product_name, AVG(s.amount) AS average_sale
+                  FROM sales s
+                  JOIN products p ON s.product_id = p.product_id
+                  GROUP BY p.product_name ORDER BY average_sale DESC"""
     elif "north" in query or "south" in query:
-        if "north" in query and "south" in query:
-            return "SELECT region, SUM(amount) as total_sales FROM sales WHERE region IN ('North', 'South') GROUP BY region ORDER BY total_sales DESC"
-        elif "north" in query:
-            return "SELECT * FROM sales WHERE region = 'North' ORDER BY sale_date"
-        else:
-            return "SELECT * FROM sales WHERE region = 'South' ORDER BY sale_date"
-    
-    elif "amount" in query and "average" in query:
-        return "SELECT product_name, AVG(amount) as average_amount FROM sales GROUP BY product_name ORDER BY average_amount DESC"
-    
-    elif "amount" in query and "sum" in query:
-        return "SELECT product_name, SUM(amount) as total_amount FROM sales GROUP BY product_name ORDER BY total_amount DESC"
-    
-    # Default fallback - try to be more specific
-    return "SELECT * FROM (SELECT * FROM sales ORDER BY id DESC) WHERE ROWNUM <= 10"
+        return """SELECT c.region, SUM(s.amount) AS total_sales
+                  FROM sales s
+                  JOIN customers c ON s.customer_id = c.customer_id
+                  WHERE c.region IN ('North', 'South')
+                  GROUP BY c.region"""
+    elif "february" in query:
+        return """SELECT p.product_name, SUM(s.amount) AS total_sales
+                  FROM sales s
+                  JOIN products p ON s.product_id = p.product_id
+                  WHERE EXTRACT(MONTH FROM s.sale_date) = 2
+                  GROUP BY p.product_name"""
+    return "SELECT * FROM sales LIMIT 10"
