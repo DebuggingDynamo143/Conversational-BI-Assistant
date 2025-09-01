@@ -1,50 +1,129 @@
 def generate_sql_query(natural_language_query):
-    """
-    Simple rule-based SQL query generator with Oracle-compatible syntax
-    """
-    query = natural_language_query.lower()
-    
-    # Pattern matching for different types of queries
-    if any(word in query for word in ["last 5", "recent", "show me", "display"]):
-        return "SELECT * FROM (SELECT * FROM sales ORDER BY sale_date DESC) WHERE ROWNUM <= 5"
-    
-    elif "total sales" in query and "product" in query:
-        return "SELECT product_name, SUM(amount) as total_sales FROM sales GROUP BY product_name ORDER BY total_sales DESC"
-    
-    elif "average" in query and "product" in query:
-        return "SELECT product_name, AVG(amount) as average_sale FROM sales GROUP BY product_name ORDER BY average_sale DESC"
-    
-    elif "region" in query and ("compare" in query or "by region" in query):
-        return "SELECT region, SUM(amount) as total_sales FROM sales GROUP BY region ORDER BY total_sales DESC"
-    
-    elif "february" in query or "2" in query or "second month" in query:
-        return "SELECT product_name, SUM(amount) as total_sales FROM sales WHERE EXTRACT(MONTH FROM sale_date) = 2 AND EXTRACT(YEAR FROM sale_date) = 2023 GROUP BY product_name"
-    
-    elif "trend" in query or "over time" in query or "by date" in query:
-        return "SELECT sale_date, SUM(amount) as daily_sales FROM sales GROUP BY sale_date ORDER BY sale_date"
-    
-    elif "product x" in query:
-        return "SELECT * FROM sales WHERE product_name = 'Product X' ORDER BY sale_date"
-    
-    elif "product y" in query:
-        return "SELECT * FROM sales WHERE product_name = 'Product Y' ORDER BY sale_date"
-    
-    elif "north" in query or "south" in query:
-        if "north" in query and "south" in query:
-            return "SELECT region, SUM(amount) as total_sales FROM sales WHERE region IN ('North', 'South') GROUP BY region ORDER BY total_sales DESC"
-        elif "north" in query:
-            return "SELECT * FROM sales WHERE region = 'North' ORDER BY sale_date"
-        else:
-            return "SELECT * FROM sales WHERE region = 'South' ORDER BY sale_date"
-    
-    elif "amount" in query and "average" in query:
-        return "SELECT product_name, AVG(amount) as average_amount FROM sales GROUP BY product_name ORDER BY average_amount DESC"
-    
-    elif "amount" in query and "sum" in query:
-        return "SELECT product_name, SUM(amount) as total_amount FROM sales GROUP BY product_name ORDER BY total_amount DESC"
-    
-    elif "product" in query and "region" in query:
-        return "SELECT product_name, region, SUM(amount) as total_sales FROM sales GROUP BY product_name, region ORDER BY product_name, region"
-    
-    # Default fallback - try to be more specific
-    return "SELECT * FROM (SELECT * FROM sales ORDER BY id DESC) WHERE ROWNUM <= 10"
+    q = natural_language_query.lower()
+
+    # --- Sales Analysis ---
+    if "total sales" in q and "last 6 months" in q:
+        return """SELECT p.product_name, SUM(s.amount) as total_sales
+                  FROM sales s
+                  JOIN products p ON s.product_id = p.product_id
+                  WHERE s.sale_date >= CURRENT_DATE - INTERVAL '6 months'
+                  GROUP BY p.product_name
+                  ORDER BY total_sales DESC"""
+
+    if "highest sales" in q and "2024" in q:
+        return """SELECT c.region, SUM(s.amount) as total_sales
+                  FROM sales s
+                  JOIN customers c ON s.customer_id = c.customer_id
+                  WHERE EXTRACT(YEAR FROM s.sale_date) = 2024
+                  GROUP BY c.region
+                  ORDER BY total_sales DESC LIMIT 1"""
+
+    if "monthly" in q and "trend" in q and "product" in q:
+        product = q.split("product")[-1].strip().strip("?")
+        return f"""SELECT DATE_TRUNC('month', s.sale_date) as month, SUM(s.amount) as total_sales
+                   FROM sales s
+                   JOIN products p ON s.product_id = p.product_id
+                   WHERE p.product_name ILIKE '%{product}%'
+                   GROUP BY month
+                   ORDER BY month"""
+
+    if "compare" in q and "product" in q and "region" in q:
+        return """SELECT p.product_name, c.region, SUM(s.amount) as total_sales
+                  FROM sales s
+                  JOIN products p ON s.product_id = p.product_id
+                  JOIN customers c ON s.customer_id = c.customer_id
+                  GROUP BY p.product_name, c.region
+                  ORDER BY p.product_name, c.region"""
+
+    # --- Customer Insights ---
+    if "top 10 customers" in q:
+        return """SELECT c.customer_name, SUM(s.amount) as total_spent
+                  FROM sales s
+                  JOIN customers c ON s.customer_id = c.customer_id
+                  GROUP BY c.customer_name
+                  ORDER BY total_spent DESC LIMIT 10"""
+
+    if "purchased more than" in q or "spending" in q:
+        return """SELECT c.customer_name, SUM(s.amount) as total_spent
+                  FROM sales s
+                  JOIN customers c ON s.customer_id = c.customer_id
+                  GROUP BY c.customer_name
+                  HAVING SUM(s.amount) > 5000
+                  ORDER BY total_spent DESC"""
+
+    if "unique customers" in q and "february 2025" in q:
+        return """SELECT COUNT(DISTINCT customer_id) as unique_customers
+                  FROM sales
+                  WHERE EXTRACT(MONTH FROM sale_date)=2 
+                    AND EXTRACT(YEAR FROM sale_date)=2025"""
+
+    # --- Product Insights ---
+    if "average sales" in q and "category" in q:
+        return """SELECT p.category, AVG(s.amount) as avg_sales
+                  FROM sales s
+                  JOIN products p ON s.product_id = p.product_id
+                  GROUP BY p.category
+                  ORDER BY avg_sales DESC"""
+
+    if "lowest sales" in q and "2023" in q:
+        return """SELECT p.product_name, SUM(s.amount) as total_sales
+                  FROM sales s
+                  JOIN products p ON s.product_id = p.product_id
+                  WHERE EXTRACT(YEAR FROM s.sale_date)=2023
+                  GROUP BY p.product_name
+                  ORDER BY total_sales ASC LIMIT 1"""
+
+    if "distribution" in q and "categories" in q:
+        return """SELECT p.category, SUM(s.amount) as total_sales
+                  FROM sales s
+                  JOIN products p ON s.product_id = p.product_id
+                  GROUP BY p.category"""
+
+    # --- Time-based Trends ---
+    if "daily sales" in q and "last 30 days" in q:
+        return """SELECT s.sale_date, SUM(s.amount) as daily_sales
+                  FROM sales s
+                  WHERE s.sale_date >= CURRENT_DATE - INTERVAL '30 days'
+                  GROUP BY s.sale_date
+                  ORDER BY s.sale_date"""
+
+    if "quarterly" in q and ("2023" in q or "2024" in q):
+        return """SELECT EXTRACT(YEAR FROM s.sale_date) as year,
+                         EXTRACT(QUARTER FROM s.sale_date) as quarter,
+                         SUM(s.amount) as total_sales
+                  FROM sales s
+                  WHERE EXTRACT(YEAR FROM s.sale_date) IN (2023,2024)
+                  GROUP BY year, quarter
+                  ORDER BY year, quarter"""
+
+    if "highest sale amount" in q or "single transaction" in q:
+        return """SELECT MAX(amount) as highest_sale FROM sales"""
+
+    # --- Mixed Insights ---
+    if "sales by product and region" in q and "2025" in q:
+        return """SELECT p.product_name, c.region, SUM(s.amount) as total_sales
+                  FROM sales s
+                  JOIN products p ON s.product_id = p.product_id
+                  JOIN customers c ON s.customer_id = c.customer_id
+                  WHERE EXTRACT(YEAR FROM s.sale_date)=2025
+                  GROUP BY p.product_name, c.region"""
+
+    if "customers" in q and "north" in q and "product" in q:
+        product = q.split("product")[-1].strip()
+        return f"""SELECT DISTINCT c.customer_name
+                   FROM sales s
+                   JOIN products p ON s.product_id = p.product_id
+                   JOIN customers c ON s.customer_id = c.customer_id
+                   WHERE c.region='North' AND p.product_name ILIKE '%{product}%'"""
+
+    if "top 5 products" in q and "south" in q:
+        return """SELECT p.product_name, SUM(s.amount) as total_sales
+                  FROM sales s
+                  JOIN products p ON s.product_id = p.product_id
+                  JOIN customers c ON s.customer_id = c.customer_id
+                  WHERE c.region='South'
+                  GROUP BY p.product_name
+                  ORDER BY total_sales DESC LIMIT 5"""
+
+    # --- Fallback ---
+    return "SELECT * FROM sales LIMIT 10"
