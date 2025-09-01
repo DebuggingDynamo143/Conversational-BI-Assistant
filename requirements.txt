@@ -2,5 +2,6 @@ streamlit
 pandas
 plotly
 python-dotenv
-oracledb
 google-generativeai
+sqlalchemy
+psycopg2-binary
